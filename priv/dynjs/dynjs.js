@@ -1,12 +1,18 @@
 var JSON = require("json");
 var core = require("riak_core");
 
+var TestObj = function(){};
+TestObj.prototype.status = "ok";
+TestObj.prototype.values = ["ok"];
+
 (function() {
+
+  var self = erlang.apply("erlang", "self");
+  log.info("self : ~p~n", self);
+  log.info("term : ~p~n", {"status": "ok"});
   
   exports.handle_command = function(msg) {
-    return core.reply({
-      "result": "result value"
-    });
+    return new TestObj();
   }
 
   exports.handle_info = function(msg) {

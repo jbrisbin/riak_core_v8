@@ -7,7 +7,9 @@
   run/3,
   resolve_module_path/2,
   resolve_filename/2,
-  find_exports/3
+  find_exports/3,
+  convert/1,
+  erlang_apply/1
 ]).
 
 read(From, Data) ->
@@ -71,19 +73,47 @@ find_exports(File, JsCtx, VM) ->
   case File of
     undefined -> [];
     _ ->
-      lager:info("finding exports in file: ~p", [File]),
+      %lager:info("finding exports in file: ~p", [File]),
       case run(File, JsCtx, VM) of
         {ok, _} -> 
           case erlv8_vm:run(VM, JsCtx, "exports") of
             {ok, Ex} -> Ex:proplist();
-            Else -> 
-              lager:info("exports=~p", [Else]),
+            _Else -> 
+              %lager:info("exports=~p", [Else]),
               []
           end;
         {throw, {erlv8_object, _, _}} ->
           throw("Error evaluating file " ++ File);
-        Else -> 
-          lager:info("no export object ~p", [Else]),
+        _Else -> 
+          %lager:info("no export object ~p", [Else]),
           []
       end
   end.
+
+convert(Obj) ->
+  %lager:info("trying to convert: ~p", [Obj]),
+  case Obj of
+    {erlv8_array, _, _}=A -> 
+      %lager:info("array=~p", [A:list()]),
+      lists:map(fun convert/1, A:list());
+    {erlv8_fun, _, _}=F -> 
+      lists:map(fun convert/1, (F:object()):proplist());
+    {erlv8_object, _, _}=O -> 
+      lists:map(fun convert/1, O:proplist());
+    {O1, O2} -> {convert(O1), convert(O2)};
+    O when is_list(O) -> 
+      lists:map(fun convert/1, O);
+    O -> 
+      %lager:info("other=~p", [O]),
+      O
+  end.
+  
+erlang_apply(Args) ->
+  %lager:info("converting args: ~p", [Args]),
+  ConvertedArgs = lists:map(fun convert/1, Args),
+  [M, F | A] = ConvertedArgs,
+  Ma = erlang:binary_to_atom(M, utf8),
+  Fa = erlang:binary_to_atom(F, utf8),
+
+  erlang:apply(Ma, Fa, A).
+  

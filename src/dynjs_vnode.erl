@@ -59,13 +59,13 @@ init([Partition]) ->
   Global:set_value("exports", ?V8Obj([])),
   Global:set_value("log", ?V8Obj([
     {"debug", fun(_Inv, [LogMsg]) -> mod_log(debug, binary_to_list(LogMsg), []);
-                 (_Inv, [FmtSpec | Args]) -> mod_log(debug, binary_to_list(FmtSpec), Args)
+                 (_Inv, [FmtSpec | Args]) -> mod_log(debug, binary_to_list(FmtSpec), dynjs_util:convert(Args))
               end},
     {"info", fun(_Inv, [LogMsg]) -> mod_log(info, binary_to_list(LogMsg), []);
-                (_Inv, [FmtSpec | Args]) -> mod_log(info, binary_to_list(FmtSpec), Args)
+                (_Inv, [FmtSpec | Args]) -> mod_log(info, binary_to_list(FmtSpec), dynjs_util:convert(Args))
              end},
     {"error", fun(_Inv, [LogMsg]) -> mod_log(error, binary_to_list(LogMsg), []);
-                 (_Inv, [FmtSpec | Args]) -> mod_log(error, binary_to_list(FmtSpec), Args)
+                 (_Inv, [FmtSpec | Args]) -> mod_log(error, binary_to_list(FmtSpec), dynjs_util:convert(Args))
               end}
   ])),
   Global:set_value("require", fun(_Inv, [M]) ->   
@@ -75,13 +75,16 @@ init([Partition]) ->
     (erlv8_context:global(ReqCtx)):set_value("exports", ?V8Obj([])),
     ReqModPath = dynjs_util:resolve_module_path(Path, binary_to_list(M)),
     ReqExports = dynjs_util:find_exports(ReqModPath, ReqCtx, VM),
-    lager:info("setting exports from ~p to ~p", [M, ReqExports]),
+    %lager:info("setting exports from ~p to ~p", [M, ReqExports]),
     
     ?V8Obj(ReqExports)
   end),
+  Global:set_value("erlang", ?V8Obj([
+    {"apply", fun(_, Args) -> dynjs_util:erlang_apply(Args) end}
+  ])),
 
   Exports = dynjs_util:find_exports(ModFile, erlv8_context:get(VM), VM),
-  lager:info("dynjs exports: ~p", [Exports]),
+  %lager:info("dynjs exports: ~p", [Exports]),
 
   LastModTable = ets:new(last_modified, []),
 
@@ -108,7 +111,7 @@ handle_info(refresh, #state{ vm=VM,
       State;
     [{Filename, LastModified}] when LastMod > LastModified ->
       Exports = dynjs_util:find_exports(Filename, erlv8_context:get(VM), VM),
-      lager:info("found exports: ~p", [Exports]),
+      %lager:info("found exports: ~p", [Exports]),
       ets:insert(LastModTable, {Filename, LastMod}),
       State#state{ exports=Exports };
     [{Filename, _LastModified}] -> 
@@ -128,8 +131,11 @@ handle_command(Msg, _Sender, #state{ vm=_VM,
   lager:info("dispatch to VM: ~p~n", [?V8Obj(Msg)]),
   
   case invoke_handler(<<"handle_command">>, Exports, Msg) of
-    noreply -> {noreply, State};
-    Obj -> {reply, {ok, Obj}, State}
+    noreply -> 
+      {noreply, State};
+    Obj -> 
+      %lager:info("reply with: ~p", [Obj]),
+      {reply, {ok, Obj}, State}
   end.
 
 handle_coverage(Request, KeySpaces, Sender, State) ->
@@ -186,10 +192,13 @@ invoke_handler(Handler, Exports, Arg) ->
   case lists:keyfind(Handler, 1, Exports) of
     {Handler, {erlv8_fun, _, _}=F} ->
       case F:call(?V8Obj(Arg)) of
-        {throw, {error, ErrorObj}} -> lager:error("Error invoking handler ~s ~p", [Handler, ErrorObj:proplist()]);
-        undefined -> noreply;
-        {erlv8_object, _, _}=JsObj -> JsObj:proplist();
-        Obj -> Obj
+        {throw, {error, ErrorObj}}=E -> 
+          lager:error("Error invoking handler ~s ~p", [Handler, ErrorObj:proplist()]),
+          E:proplist();
+        undefined -> 
+          noreply;
+        Obj -> 
+          dynjs_util:convert(Obj)
       end;
     _ -> noreply
   end.

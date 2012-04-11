@@ -6,7 +6,7 @@ exports.CONTINUE = CONTINUE;
 
 (function() {
   
-  exports.reply = function(msg) { return OK; }  
+  exports.reply = function(msg) { return msg; }  
   exports.stop = function() { return OK; }
   
 })();

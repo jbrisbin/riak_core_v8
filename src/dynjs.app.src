@@ -1,0 +1,13 @@
+{application, dynjs, [
+  {description, "Dynamo-powered Javascript based on V8"},
+  {vsn, "1.0.0"},
+  {registered, []},
+  {applications, [
+    kernel,
+    stdlib,
+    erlv8,
+    riak_core
+  ]},
+  {mod, { dynjs_app, []}},
+  {env, []}
+]}.
